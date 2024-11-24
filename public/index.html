@@ -126,6 +126,7 @@ int main() {
             ws = new WebSocket(`ws://${window.location.host}`);
             
             ws.onmessage = (event) => {
+                console.log('接收到来自服务器的消息:', event.data);
                 const message = JSON.parse(event.data);
                 
                 switch (message.type) {
@@ -135,20 +136,27 @@ int main() {
                         document.getElementById("runButton").disabled = false;
                         break;
                     case 'output':
+                        console.log('接收到输出:', message.data);
                         outputDiv.textContent += message.data;
                         outputDiv.scrollTop = outputDiv.scrollHeight;
                         break;
                     case 'error':
+                        console.log('接收到错误输出:', message.data);
                         outputDiv.textContent += `错误: ${message.data}`;
                         outputDiv.scrollTop = outputDiv.scrollHeight;
                         break;
                     case 'processReady':
                         currentProcessId = message.processId;
+                        console.log('接收到processReady，processId:', currentProcessId);
                         inputContainer.style.display = 'block';
                         break;
                     case 'processDone':
+                        console.log('接收到processDone消息');
                         inputContainer.style.display = 'none';
+                        outputDiv.textContent += '\n程序执行完毕。\n';
                         break;
+                    default:
+                        console.log('接收到未知类型的消息:', message.type);
                 }
             };
 
@@ -169,15 +177,16 @@ int main() {
 
         initWebSocket();
 
-        // 发送输入
+        // 修改发送按钮事件处理
         sendInputButton.addEventListener('click', () => {
-            const input = programInput.value;
-            ws.send(JSON.stringify({
-                type: 'input',
-                processId: currentProcessId,
-                input: input
-            }));
-            programInput.value = '';
+            const input = programInput.value.trim();
+            console.log('发送输入:', input);
+                ws.send(JSON.stringify({
+                    type: 'input',
+                    processId: currentProcessId,
+                    input: input
+                }));
+                programInput.value = '';
         });
 
         // 修改运行按钮初始状态

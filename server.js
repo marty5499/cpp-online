@@ -20,26 +20,48 @@ app.get('/', (req, res) => {
 // 存储WebSocket连接
 const clients = new Map();
 
+// 存储子进程
+const processes = new Map();
+
 wss.on('connection', (ws) => {
     const clientId = uuidv4();
     clients.set(clientId, ws);
+    console.log(`新的WebSocket连接已建立，clientId: ${clientId}`);
 
     ws.on('message', (message) => {
+        console.log(`收到来自clientId ${clientId} 的消息: ${message}`);
         const data = JSON.parse(message);
         if (data.type === 'input') {
-            const process = clients.get(data.processId);
-            if (process && process.stdin) {
-                process.stdin.write(data.input + '\n');
+            if (data.input === 'D') {
+                const process = processes.get(data.processId);
+                if (process && process.stdin) {
+                    console.log(`关闭clientId ${clientId} 的processId ${data.processId} 的标准输入`);
+                    process.stdin.end();
+                    ws.send(JSON.stringify({ type: 'processDone' }));
+                    processes.delete(data.processId);
+                } else {
+                    console.log(`未找到对应的processId ${data.processId} 或 process.stdin`);
+                }
+            } else {
+                const process = processes.get(data.processId);
+                if (process && process.stdin) {
+                    console.log(`向clientId ${clientId} 的processId ${data.processId} 写入输入: ${data.input}`);
+                    process.stdin.write(data.input + '\n');
+                } else {
+                    console.log(`未找到对应的processId ${data.processId} 或 process.stdin`);
+                }
             }
         }
     });
 
     ws.on('close', () => {
         clients.delete(clientId);
+        console.log(`WebSocket连接已关闭，clientId: ${clientId}`);
     });
 
     // 发送clientId给客户端
     ws.send(JSON.stringify({ type: 'init', clientId }));
+    console.log(`已发送init消息给clientId: ${clientId}`);
 });
 
 // 修改编译和执行C++代码的函数
@@ -53,10 +75,12 @@ async function compileCpp(code, clientId) {
         // 创建工作目录并设置权限
         await fs.mkdir(workDir, { recursive: true });
         await fs.chmod(workDir, 0o777);
-        
+        console.log(`已创建工作目录: ${workDir} 并设置权限为777`);
+
         // 写入源代码文件并设置权限
         await fs.writeFile(sourceFile, code, 'utf8');
         await fs.chmod(sourceFile, 0o666);
+        console.log(`已写入源代码到: ${sourceFile} 并设置权限为666`);
 
         if (debug) {
             console.log('工作目录:', workDir);
@@ -84,54 +108,48 @@ async function compileCpp(code, clientId) {
             const process = spawn('/bin/bash', ['-c', dockerCmd], {
                 cwd: workDir
             });
+            console.log(`已启动Docker进程，processId: ${id}`);
 
             let output = '';
             let errorOutput = '';
+
+            process.stdin.on('end', () => {
+                console.log(`processId ${id} 标准输入已结束`);
+            });
 
             process.stdout.on('data', (data) => {
                 const text = data.toString();
                 output += text;
                 ws.send(JSON.stringify({ type: 'output', data: text }));
-                if (debug) {
-                    console.log('程序输出:', text);
-                }
+                console.log(`processId ${id} 输出: ${text}`);
             });
 
             process.stderr.on('data', (data) => {
                 const text = data.toString();
                 errorOutput += text;
                 ws.send(JSON.stringify({ type: 'error', data: text }));
-                if (debug) {
-                    console.error('错误输出:', text);
-                }
+                console.error(`processId ${id} 错误输出: ${text}`);
             });
 
             process.on('error', (error) => {
-                console.error('进程错误:', error);
+                console.error(`processId ${id} 进程错误:`, error);
                 reject(error);
             });
 
             process.on('close', (code) => {
-                if (debug) {
-                    console.log('进程退出码:', code);
-                    console.log('最终输出:', output);
-                    if (errorOutput) {
-                        console.log('错误输出:', errorOutput);
-                    }
+                console.log(`processId ${id} 进程已关闭，退出码: ${code}`);
+                console.log(`processId ${id} 最终输出: ${output}`);
+                if (errorOutput) {
+                    console.error(`processId ${id} 最终错误输出: ${errorOutput}`);
                 }
-
-                if (code === 0) {
-                    ws.send(JSON.stringify({ type: 'processDone' }));
-                    resolve(output);
-                } else {
-                    ws.send(JSON.stringify({ type: 'processDone' }));
-                    reject(new Error(`程序退出代码: ${code}\n${errorOutput}`));
-                }
+                ws.send(JSON.stringify({ type: 'processDone' }));
+                processes.delete(id);
             });
 
-            // 存储process以便后续输入使用
-            clients.set(id, process);
+            // 存储process到processes映射
+            processes.set(id, process);
             ws.send(JSON.stringify({ type: 'processReady', processId: id }));
+            console.log(`processReady消息已发送，processId: ${id}`);
         });
     } catch (error) {
         console.error('编译过程错误:', error);
@@ -144,6 +162,7 @@ async function compileCpp(code, clientId) {
                 if (debug) {
                     console.log('清理工作目录:', workDir);
                 }
+                console.log(`已清理工作目录: ${workDir}`);
             } catch (error) {
                 console.error('清理临时文件失败:', error);
             }
