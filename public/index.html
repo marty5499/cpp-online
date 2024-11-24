@@ -35,12 +35,46 @@
         #runButton:hover {
             background-color: #45a049;
         }
+        .output-container {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #1e1e1e;
+            border: 1px solid #444;
+            min-height: 100px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .input-container {
+            margin-top: 10px;
+        }
+        #programInput {
+            padding: 5px;
+            margin-right: 5px;
+            background-color: #383838;
+            color: white;
+            border: 1px solid #444;
+        }
+        #sendInput {
+            padding: 5px 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
     <div class="editor-container">
         <textarea id="editor"></textarea>
         <button id="runButton">Run</button>
+        <div id="output" class="output-container"></div>
+        <div id="input-container" class="input-container" style="display: none;">
+            <input type="text" id="programInput" placeholder="请输入...">
+            <button id="sendInput">发送</button>
+        </div>
     </div>
 
     <!-- 引入 CodeMirror 的 JS -->
@@ -70,29 +104,115 @@ int main() {
 
     std::cout << "和: " << a + b << std::endl;
     std::cout << "差: " << a - b << std::endl;
-    std::cout << "積: " << a * b << std::endl;
+    std::cout << "积: " << a * b << std::endl;
     std::cout << "商: " << a / b << std::endl;
-    std::cout << "餘數: " << a % b << std::endl;
+    std::cout << "余数: " << a % b << std::endl;
 
     return 0;
-}
 }`);
 
-        // 修改運行按鈕事件
+        let ws;
+        let clientId;
+        let currentProcessId;
+        const outputDiv = document.getElementById('output');
+        const inputContainer = document.getElementById('input-container');
+        const programInput = document.getElementById('programInput');
+        const sendInputButton = document.getElementById('sendInput');
+
+        // 初始化WebSocket连接
+        function initWebSocket() {
+            ws = new WebSocket(`ws://${window.location.host}`);
+            
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                
+                switch (message.type) {
+                    case 'init':
+                        clientId = message.clientId;
+                        console.log('获取到 clientId:', clientId);
+                        document.getElementById("runButton").disabled = false;
+                        break;
+                    case 'output':
+                        outputDiv.textContent += message.data;
+                        outputDiv.scrollTop = outputDiv.scrollHeight;
+                        break;
+                    case 'error':
+                        outputDiv.textContent += `错误: ${message.data}`;
+                        outputDiv.scrollTop = outputDiv.scrollHeight;
+                        break;
+                    case 'processReady':
+                        currentProcessId = message.processId;
+                        inputContainer.style.display = 'block';
+                        break;
+                }
+            };
+
+            ws.onopen = () => {
+                console.log('WebSocket 连接已建立');
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket 连接已断开，尝试重连...');
+                document.getElementById("runButton").disabled = true;
+                setTimeout(initWebSocket, 1000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket 错误:', error);
+            };
+        }
+
+        initWebSocket();
+
+        // 发送输入
+        sendInputButton.addEventListener('click', () => {
+            const input = programInput.value;
+            ws.send(JSON.stringify({
+                type: 'input',
+                processId: currentProcessId,
+                input: input
+            }));
+            programInput.value = '';
+        });
+
+        // 修改运行按钮初始状态
+        document.getElementById("runButton").disabled = true;
+
+        // 修改运行按钮事件处理
         document.getElementById("runButton").addEventListener("click", async function() {
+            if (!clientId) {
+                outputDiv.textContent = '等待与服务器建立连接...';
+                return;
+            }
+
+            outputDiv.textContent = '';
+            inputContainer.style.display = 'none';
             const code = editor.getValue();
+            
             try {
+                console.log('发送编译请求:', { code, clientId });
                 const response = await fetch('/compile', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ code })
+                    body: JSON.stringify({ code, clientId })
                 });
                 const result = await response.json();
-                alert(result.output);
+                console.log('收到编译响应:', result);
+                if (!result.success) {
+                    outputDiv.textContent += `错误: ${result.error}\n`;
+                }
             } catch (error) {
-                alert('編譯或執行出錯：' + error.message);
+                console.error('请求错误:', error);
+                outputDiv.textContent += `错误: ${error.message}\n`;
+            }
+        });
+
+        // 添加回车键支持
+        programInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendInputButton.click();
             }
         });
     </script>
