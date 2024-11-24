@@ -97,17 +97,19 @@
 
         // 設置預設程式碼
         editor.setValue(`#include <iostream>
+#include <vector>
+#include <string>
+using namespace std;
 
 int main() {
-    int a, b;
-    std::cin >> a >> b;
-
-    std::cout << "和: " << a + b << std::endl;
-    std::cout << "差: " << a - b << std::endl;
-    std::cout << "积: " << a * b << std::endl;
-    std::cout << "商: " << a / b << std::endl;
-    std::cout << "余数: " << a % b << std::endl;
-
+    vector<string> todoList;
+    string line;
+    while (getline(cin, line)) {
+        todoList.push_back(line);
+    }
+    for (int i = todoList.size() - 1; i >= 0; --i) {
+        cout << todoList[i] << endl;
+    }
     return 0;
 }`);
 
@@ -143,6 +145,9 @@ int main() {
                     case 'processReady':
                         currentProcessId = message.processId;
                         inputContainer.style.display = 'block';
+                        break;
+                    case 'processDone':
+                        inputContainer.style.display = 'none';
                         break;
                 }
             };

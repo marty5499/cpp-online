@@ -121,8 +121,10 @@ async function compileCpp(code, clientId) {
                 }
 
                 if (code === 0) {
+                    ws.send(JSON.stringify({ type: 'processDone' }));
                     resolve(output);
                 } else {
+                    ws.send(JSON.stringify({ type: 'processDone' }));
                     reject(new Error(`程序退出代码: ${code}\n${errorOutput}`));
                 }
             });
