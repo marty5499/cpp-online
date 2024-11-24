@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>GDB Online</title>
+    <!-- 引入 CodeMirror 的 CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #2d2d2d;
+            color: #fff;
+        }
+        .editor-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .CodeMirror {
+            height: 400px;
+            font-size: 14px;
+            border: 1px solid #444;
+        }
+        #runButton {
+            margin-top: 10px;
+            padding: 8px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        #runButton:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="editor-container">
+        <textarea id="editor"></textarea>
+        <button id="runButton">Run</button>
+    </div>
+
+    <!-- 引入 CodeMirror 的 JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/clike/clike.min.js"></script>
+    
+    <script>
+        // 初始化 CodeMirror
+        const editor = CodeMirror.fromTextArea(document.getElementById("editor"), {
+            mode: "text/x-c++src",
+            theme: "monokai",
+            lineNumbers: true,
+            autoCloseBrackets: true,
+            matchBrackets: true,
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: true,
+            lineWrapping: true
+        });
+
+        // 設置預設程式碼
+        editor.setValue(`#include <iostream>
+
+int main() {
+    int a, b;
+    std::cin >> a >> b;
+
+    std::cout << "和: " << a + b << std::endl;
+    std::cout << "差: " << a - b << std::endl;
+    std::cout << "積: " << a * b << std::endl;
+    std::cout << "商: " << a / b << std::endl;
+    std::cout << "餘數: " << a % b << std::endl;
+
+    return 0;
+}
+}`);
+
+        // 修改運行按鈕事件
+        document.getElementById("runButton").addEventListener("click", async function() {
+            const code = editor.getValue();
+            try {
+                const response = await fetch('/compile', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ code })
+                });
+                const result = await response.json();
+                alert(result.output);
+            } catch (error) {
+                alert('編譯或執行出錯：' + error.message);
+            }
+        });
+    </script>
+</body>
+</html>

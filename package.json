@@ -1,0 +1,10 @@
+{
+  "name": "cpp-online-compiler",
+  "version": "1.0.0",
+  "description": "Online C++ compiler",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.17.1",
+    "uuid": "^8.3.2"
+  }
+}
