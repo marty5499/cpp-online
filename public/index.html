@@ -109,11 +109,21 @@ int main() {
         let clientId;
         let currentProcessId;
         const outputDiv = document.getElementById('output');
-
         let isWaitingForInput = false;
 
-        // 初始化WebSocket连接
-        function initWebSocket() {
+        // 修改運行按鈕初始狀態，因為不需要等待 WebSocket 連接，所以預設為啟用
+        document.getElementById("runButton").disabled = false;
+
+        // 修改運行按鈕事件處理
+        document.getElementById("runButton").addEventListener("click", async function() {
+            outputDiv.textContent = '';
+            
+            // 如果已經有 WebSocket 連接，先關閉它
+            if (ws) {
+                ws.close();
+            }
+
+            // 初始化新的 WebSocket 連接
             ws = new WebSocket(`ws://${window.location.host}`);
             
             ws.onmessage = (event) => {
@@ -124,7 +134,8 @@ int main() {
                     case 'init':
                         clientId = message.clientId;
                         console.log('獲取到 clientId:', clientId);
-                        document.getElementById("runButton").disabled = false;
+                        // 收到 init 消息後立即發送編譯請求
+                        sendCompileRequest();
                         break;
                     case 'output':
                         console.log('接收到輸出:', message.data);
@@ -151,6 +162,8 @@ int main() {
                         }
                         outputDiv.appendChild(document.createTextNode('\n程序執行完畢。\n'));
                         outputDiv.scrollTop = outputDiv.scrollHeight;
+                        // 程序結束後關閉 WebSocket 連接
+                        ws.close();
                         break;
                     default:
                         console.log('接收到未知類型的消息:', message.type);
@@ -162,17 +175,38 @@ int main() {
             };
 
             ws.onclose = () => {
-                console.log('WebSocket 連線已斷開，嘗試重連...');
-                document.getElementById("runButton").disabled = true;
-                setTimeout(initWebSocket, 1000);
+                console.log('WebSocket 連線已關閉');
+                isWaitingForInput = false;
             };
 
             ws.onerror = (error) => {
                 console.error('WebSocket 錯誤:', error);
+                outputDiv.textContent += `錯誤: WebSocket 連接失敗\n`;
             };
-        }
+        });
 
-        initWebSocket();
+        // 將編譯請求邏輯抽取為單獨的函數
+        async function sendCompileRequest() {
+            const code = editor.getValue();
+            try {
+                console.log('發送編譯請求:', { code, clientId });
+                const response = await fetch('/compile', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ code, clientId })
+                });
+                const result = await response.json();
+                console.log('收到編譯響應:', result);
+                if (!result.success) {
+                    outputDiv.textContent += `錯誤: ${result.error}\n`;
+                }
+            } catch (error) {
+                console.error('請求錯誤:', error);
+                outputDiv.textContent += `錯誤: ${error.message}\n`;
+            }
+        }
 
         // 創建輸入行
         function createInputLine() {
@@ -217,39 +251,6 @@ int main() {
 
             outputDiv.scrollTop = outputDiv.scrollHeight;
         }
-
-        // 修改運行按鈕初始狀態
-        document.getElementById("runButton").disabled = true;
-
-        // 修改運行按鈕事件處理
-        document.getElementById("runButton").addEventListener("click", async function() {
-            if (!clientId) {
-                outputDiv.textContent = '等待與伺服器建立連接...';
-                return;
-            }
-
-            outputDiv.textContent = '';
-            const code = editor.getValue();
-            
-            try {
-                console.log('發送編譯請求:', { code, clientId });
-                const response = await fetch('/compile', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ code, clientId })
-                });
-                const result = await response.json();
-                console.log('收到編譯響應:', result);
-                if (!result.success) {
-                    outputDiv.textContent += `錯誤: ${result.error}\n`;
-                }
-            } catch (error) {
-                console.error('請求錯誤:', error);
-                outputDiv.textContent += `錯誤: ${error.message}\n`;
-            }
-        });
     </script>
 </body>
 </html>
