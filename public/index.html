@@ -6,66 +6,13 @@
     <!-- 引入 CodeMirror 的 CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
-    <style>
-        body {
-            margin: 0;
-            padding: 20px;
-            background-color: #2d2d2d;
-            color: #fff;
-        }
-        .editor-container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        .CodeMirror {
-            height: 400px;
-            font-size: 14px;
-            border: 1px solid #444;
-        }
-        #runButton {
-            margin-top: 10px;
-            padding: 8px 20px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        #runButton:hover {
-            background-color: #45a049;
-        }
-        .output-container {
-            margin-top: 10px;
-            padding: 10px;
-            background-color: #1e1e1e;
-            border: 1px solid #444;
-            min-height: 100px;
-            max-height: 300px;
-            overflow-y: auto;
-            font-family: monospace;
-            white-space: pre-wrap;
-            position: relative;
-        }
-        .inline-input {
-            background-color: transparent;
-            border: none;
-            color: #fff;
-            font-family: monospace;
-            width: calc(100% - 20px);
-            padding: 0;
-            margin: 0;
-            outline: none;
-        }
-        .input-line {
-            color: #4CAF50;
-        }
-    </style>
+    <!-- 引入自定義樣式 -->
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="editor-container">
         <textarea id="editor"></textarea>
-        <button id="runButton">Run</button>
+        <button id="runButton">終端機模式</button>
         <div id="output" class="output-container"></div>
     </div>
 
@@ -111,13 +58,9 @@ int main() {
         const outputDiv = document.getElementById('output');
         let isWaitingForInput = false;
 
-        // 修改運行按鈕初始狀態，因為不需要等待 WebSocket 連接，所以預設為啟用
-        document.getElementById("runButton").disabled = false;
-
         // 修改運行按鈕事件處理
         document.getElementById("runButton").addEventListener("click", async function() {
             outputDiv.textContent = '';
-            
             // 如果已經有 WebSocket 連接，先關閉它
             if (ws) {
                 ws.close();
