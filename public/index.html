@@ -45,24 +45,20 @@
             overflow-y: auto;
             font-family: monospace;
             white-space: pre-wrap;
+            position: relative;
         }
-        .input-container {
-            margin-top: 10px;
-        }
-        #programInput {
-            padding: 5px;
-            margin-right: 5px;
-            background-color: #383838;
-            color: white;
-            border: 1px solid #444;
-        }
-        #sendInput {
-            padding: 5px 10px;
-            background-color: #4CAF50;
-            color: white;
+        .inline-input {
+            background-color: transparent;
             border: none;
-            border-radius: 4px;
-            cursor: pointer;
+            color: #fff;
+            font-family: monospace;
+            width: calc(100% - 20px);
+            padding: 0;
+            margin: 0;
+            outline: none;
+        }
+        .input-line {
+            color: #4CAF50;
         }
     </style>
 </head>
@@ -71,18 +67,6 @@
         <textarea id="editor"></textarea>
         <button id="runButton">Run</button>
         <div id="output" class="output-container"></div>
-        <div id="input-container" class="input-container" style="display: none;">
-            <input type="text" id="programInput" placeholder="請輸入...">
-            <button id="sendInput">發送</button>
-            <button id="endInput" style="
-                padding: 5px 10px;
-                background-color: #ff4444;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                margin-left: 5px;">結束輸入</button>
-        </div>
     </div>
 
     <!-- 引入 CodeMirror 的 JS -->
@@ -125,9 +109,8 @@ int main() {
         let clientId;
         let currentProcessId;
         const outputDiv = document.getElementById('output');
-        const inputContainer = document.getElementById('input-container');
-        const programInput = document.getElementById('programInput');
-        const sendInputButton = document.getElementById('sendInput');
+
+        let isWaitingForInput = false;
 
         // 初始化WebSocket连接
         function initWebSocket() {
@@ -145,23 +128,29 @@ int main() {
                         break;
                     case 'output':
                         console.log('接收到輸出:', message.data);
-                        outputDiv.textContent += message.data;
-                        outputDiv.scrollTop = outputDiv.scrollHeight;
-                        break;
-                    case 'error':
-                        console.log('接收到錯誤輸出:', message.data);
-                        outputDiv.textContent += `錯誤: ${message.data}`;
+                        if (isWaitingForInput) {
+                            outputDiv.lastChild.remove();
+                        }
+                        outputDiv.appendChild(document.createTextNode(message.data));
+                        if (isWaitingForInput) {
+                            createInputLine();
+                        }
                         outputDiv.scrollTop = outputDiv.scrollHeight;
                         break;
                     case 'processReady':
                         currentProcessId = message.processId;
                         console.log('接收到processReady，processId:', currentProcessId);
-                        inputContainer.style.display = 'block';
+                        isWaitingForInput = true;
+                        createInputLine();
                         break;
                     case 'processDone':
                         console.log('接收到processDone消息');
-                        inputContainer.style.display = 'none';
-                        outputDiv.textContent += '\n程序執行完畢。\n';
+                        isWaitingForInput = false;
+                        if (outputDiv.lastChild.className === 'input-line') {
+                            outputDiv.lastChild.remove();
+                        }
+                        outputDiv.appendChild(document.createTextNode('\n程序執行完畢。\n'));
+                        outputDiv.scrollTop = outputDiv.scrollHeight;
                         break;
                     default:
                         console.log('接收到未知類型的消息:', message.type);
@@ -185,17 +174,49 @@ int main() {
 
         initWebSocket();
 
-        // 修改發送按鈕事件處理
-        sendInputButton.addEventListener('click', () => {
-            const input = programInput.value.trim();
-            console.log('發送輸入:', input);
-                ws.send(JSON.stringify({
-                    type: 'input',
-                    processId: currentProcessId,
-                    input: input
-                }));
-                programInput.value = '';
-        });
+        // 創建輸入行
+        function createInputLine() {
+            const inputLine = document.createElement('div');
+            inputLine.className = 'input-line';
+            const input = document.createElement('input');
+            input.className = 'inline-input';
+            input.placeholder = '按 Enter 發送，Ctrl+D 結束輸入...';
+            inputLine.appendChild(input);
+            outputDiv.appendChild(inputLine);
+            input.focus();
+
+            // 處理鍵盤事件
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const inputValue = input.value.trim();
+                    // 移除輸入框
+                    inputLine.remove();
+                    // 直接在最後添加輸入的內容
+                    outputDiv.appendChild(document.createTextNode(inputValue + '\n'));
+                    // 發送輸入
+                    ws.send(JSON.stringify({
+                        type: 'input',
+                        processId: currentProcessId,
+                        input: inputValue
+                    }));
+                    // 創建新的輸入行
+                    createInputLine();
+                } else if (e.key === 'd' && e.ctrlKey) {
+                    e.preventDefault();
+                    // 移除輸入框
+                    inputLine.remove();
+                    // 發送 EOF
+                    ws.send(JSON.stringify({
+                        type: 'eof',
+                        processId: currentProcessId
+                    }));
+                    isWaitingForInput = false;
+                }
+            });
+
+            outputDiv.scrollTop = outputDiv.scrollHeight;
+        }
 
         // 修改運行按鈕初始狀態
         document.getElementById("runButton").disabled = true;
@@ -208,7 +229,6 @@ int main() {
             }
 
             outputDiv.textContent = '';
-            inputContainer.style.display = 'none';
             const code = editor.getValue();
             
             try {
@@ -229,26 +249,6 @@ int main() {
                 console.error('請求錯誤:', error);
                 outputDiv.textContent += `錯誤: ${error.message}\n`;
             }
-        });
-
-        // 添加回車鍵支持
-        programInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendInputButton.click();
-            }
-        });
-
-        // 獲取結束輸入按鈕元素
-        const endInputButton = document.getElementById('endInput');
-        
-        // 添加結束輸入按鈕的點擊事件處理
-        endInputButton.addEventListener('click', () => {
-            console.log('發送 EOF 信號');
-            ws.send(JSON.stringify({
-                type: 'eof',
-                processId: currentProcessId
-            }));
-            inputContainer.style.display = 'none';
         });
     </script>
 </body>

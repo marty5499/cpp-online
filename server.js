@@ -93,12 +93,19 @@ async function compileCpp(code, clientId) {
 
         return new Promise((resolve, reject) => {
             // 修改 Docker 命令，使用絕對路徑並添加調試信息
-            const dockerCmd = `docker run --rm -i \
-                -v "${workDir}:/workspace" \
-                -w /workspace \
-                -u root \
-                cpp-runner:latest \
-                bash -c "ls -la && pwd && g++ main.cpp -o program && ./program"`;
+            const dockerCmd = debug 
+                ? `docker run --rm -i \
+                    -v "${workDir}:/workspace" \
+                    -w /workspace \
+                    -u root \
+                    cpp-runner:latest \
+                    bash -c "ls -la && pwd && g++ main.cpp -o program && ./program"`
+                : `docker run --rm -i \
+                    -v "${workDir}:/workspace" \
+                    -w /workspace \
+                    -u root \
+                    cpp-runner:latest \
+                    bash -c "g++ main.cpp -o program && ./program"`;
             
             if (debug) {
                 console.log('Docker命令:', dockerCmd);
@@ -169,7 +176,7 @@ async function compileCpp(code, clientId) {
     }
 }
 
-const debug = true;  // 開啟調試模式
+const debug = false;  // 開啟調試模式
 
 app.post('/compile', async (req, res) => {
     if (debug) {
