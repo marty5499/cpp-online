@@ -1,17 +1,20 @@
-FROM gcc:latest
+FROM gcc:12
 
-# 创建工作目录
+# 創建工作目錄
 WORKDIR /workspace
 
-# 安装必要的工具
-RUN apt-get update && \
-    apt-get install -y g++ && \
+# 添加鏡像源並安裝必要工具
+RUN echo "deb http://deb.debian.org/debian bookworm main" > /etc/apt/sources.list && \
+    echo "deb http://deb.debian.org/debian-security bookworm-security main" >> /etc/apt/sources.list && \
+    echo "deb http://deb.debian.org/debian bookworm-updates main" >> /etc/apt/sources.list && \
+    apt-get update --allow-insecure-repositories && \
+    apt-get install -y --allow-unauthenticated --no-install-recommends g++ && \
     rm -rf /var/lib/apt/lists/*
 
-# 设置工作目录权限
+# 設置工作目錄權限
 RUN chmod 777 /workspace
 
-# 保持 root 用户以便使用动态 UID
+# 保持 root 用戶以便使用動態 UID
 USER root
 
 CMD ["bash"]

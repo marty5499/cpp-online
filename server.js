@@ -17,38 +17,38 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// 存储WebSocket连接
+// 儲存WebSocket連接
 const clients = new Map();
 
-// 存储子进程
+// 儲存子進程
 const processes = new Map();
 
 wss.on('connection', (ws) => {
     const clientId = uuidv4();
     clients.set(clientId, ws);
-    console.log(`新的WebSocket连接已建立，clientId: ${clientId}`);
+    console.log(`新的WebSocket連接已建立，clientId: ${clientId}`);
 
     ws.on('message', (message) => {
-        console.log(`收到来自clientId ${clientId} 的消息: ${message}`);
+        console.log(`收到來自clientId ${clientId} 的消息: ${message}`);
         const data = JSON.parse(message);
         if (data.type === 'input') {
             if (data.input === 'D') {
                 const process = processes.get(data.processId);
                 if (process && process.stdin) {
-                    console.log(`关闭clientId ${clientId} 的processId ${data.processId} 的标准输入`);
+                    console.log(`關閉clientId ${clientId} 的processId ${data.processId} 的標準輸入`);
                     process.stdin.end();
                     ws.send(JSON.stringify({ type: 'processDone' }));
                     processes.delete(data.processId);
                 } else {
-                    console.log(`未找到对应的processId ${data.processId} 或 process.stdin`);
+                    console.log(`未找到對應的processId ${data.processId} 或 process.stdin`);
                 }
             } else {
                 const process = processes.get(data.processId);
                 if (process && process.stdin) {
-                    console.log(`向clientId ${clientId} 的processId ${data.processId} 写入输入: ${data.input}`);
+                    console.log(`向clientId ${clientId} 的processId ${data.processId} 寫入輸入: ${data.input}`);
                     process.stdin.write(data.input + '\n');
                 } else {
-                    console.log(`未找到对应的processId ${data.processId} 或 process.stdin`);
+                    console.log(`未找到對應的processId ${data.processId} 或 process.stdin`);
                 }
             }
         }
@@ -56,15 +56,15 @@ wss.on('connection', (ws) => {
 
     ws.on('close', () => {
         clients.delete(clientId);
-        console.log(`WebSocket连接已关闭，clientId: ${clientId}`);
+        console.log(`WebSocket連接已關閉，clientId: ${clientId}`);
     });
 
-    // 发送clientId给客户端
+    // 發送clientId給客戶端
     ws.send(JSON.stringify({ type: 'init', clientId }));
-    console.log(`已发送init消息给clientId: ${clientId}`);
+    console.log(`已發送init消息給clientId: ${clientId}`);
 });
 
-// 修改编译和执行C++代码的函数
+// 修改編譯和執行C++代碼的函數
 async function compileCpp(code, clientId) {
     const id = uuidv4();
     const workDir = path.resolve(__dirname, 'tmp', id);
@@ -72,28 +72,28 @@ async function compileCpp(code, clientId) {
     const ws = clients.get(clientId);
 
     try {
-        // 创建工作目录并设置权限
+        // 創建工作目錄並設置權限
         await fs.mkdir(workDir, { recursive: true });
         await fs.chmod(workDir, 0o777);
-        console.log(`已创建工作目录: ${workDir} 并设置权限为777`);
+        console.log(`已創建工作目錄: ${workDir} 並設置權限為777`);
 
-        // 写入源代码文件并设置权限
+        // 寫入源代碼文件並設置權限
         await fs.writeFile(sourceFile, code, 'utf8');
         await fs.chmod(sourceFile, 0o666);
-        console.log(`已写入源代码到: ${sourceFile} 并设置权限为666`);
+        console.log(`已寫入源代碼到: ${sourceFile} 並設置權限為666`);
 
         if (debug) {
-            console.log('工作目录:', workDir);
+            console.log('工作目錄:', workDir);
             console.log('源文件:', sourceFile);
-            console.log('源代码:', code);
+            console.log('源代碼:', code);
             
-            // 检查文件是否存在
+            // 檢查文件是否存在
             const files = await fs.readdir(workDir);
-            console.log('目录内容:', files);
+            console.log('目錄內容:', files);
         }
 
         return new Promise((resolve, reject) => {
-            // 修改 Docker 命令，使用绝对路径并添加调试信息
+            // 修改 Docker 命令，使用絕對路徑並添加調試信息
             const dockerCmd = `docker run --rm -i \
                 -v "${workDir}:/workspace" \
                 -w /workspace \
@@ -108,132 +108,132 @@ async function compileCpp(code, clientId) {
             const process = spawn('/bin/bash', ['-c', dockerCmd], {
                 cwd: workDir
             });
-            console.log(`已启动Docker进程，processId: ${id}`);
+            console.log(`已啟動Docker進程，processId: ${id}`);
 
             let output = '';
             let errorOutput = '';
 
             process.stdin.on('end', () => {
-                console.log(`processId ${id} 标准输入已结束`);
+                console.log(`processId ${id} 標準輸入已結束`);
             });
 
             process.stdout.on('data', (data) => {
                 const text = data.toString();
                 output += text;
                 ws.send(JSON.stringify({ type: 'output', data: text }));
-                console.log(`processId ${id} 输出: ${text}`);
+                console.log(`processId ${id} 輸出: ${text}`);
             });
 
             process.stderr.on('data', (data) => {
                 const text = data.toString();
                 errorOutput += text;
                 ws.send(JSON.stringify({ type: 'error', data: text }));
-                console.error(`processId ${id} 错误输出: ${text}`);
+                console.error(`processId ${id} 錯誤輸出: ${text}`);
             });
 
             process.on('error', (error) => {
-                console.error(`processId ${id} 进程错误:`, error);
+                console.error(`processId ${id} 進程錯誤:`, error);
                 reject(error);
             });
 
             process.on('close', (code) => {
-                console.log(`processId ${id} 进程已关闭，退出码: ${code}`);
-                console.log(`processId ${id} 最终输出: ${output}`);
+                console.log(`processId ${id} 進程已關閉，退出碼: ${code}`);
+                console.log(`processId ${id} 最終輸出: ${output}`);
                 if (errorOutput) {
-                    console.error(`processId ${id} 最终错误输出: ${errorOutput}`);
+                    console.error(`processId ${id} 最終錯誤輸出: ${errorOutput}`);
                 }
                 ws.send(JSON.stringify({ type: 'processDone' }));
                 processes.delete(id);
             });
 
-            // 存储process到processes映射
+            // 儲存process到processes映射
             processes.set(id, process);
             ws.send(JSON.stringify({ type: 'processReady', processId: id }));
-            console.log(`processReady消息已发送，processId: ${id}`);
+            console.log(`processReady消息已發送，processId: ${id}`);
         });
     } catch (error) {
-        console.error('编译过程错误:', error);
+        console.error('編譯過程錯誤:', error);
         throw error;
     } finally {
-        // 延迟清理临时文件
+        // 延遲清理臨時文件
         setTimeout(async () => {
             try {
                 await fs.rm(workDir, { recursive: true, force: true });
                 if (debug) {
-                    console.log('清理工作目录:', workDir);
+                    console.log('清理工作目錄:', workDir);
                 }
-                console.log(`已清理工作目录: ${workDir}`);
+                console.log(`已清理工作目錄: ${workDir}`);
             } catch (error) {
-                console.error('清理临时文件失败:', error);
+                console.error('清理臨時文件失敗:', error);
             }
         }, 1000);
     }
 }
 
-const debug = true;  // 开启调试模式
+const debug = true;  // 開啟調試模式
 
 app.post('/compile', async (req, res) => {
     if (debug) {
-        console.log('收到编译请求:', req.body);
+        console.log('收到編譯請求:', req.body);
     }
     
     const { code, clientId } = req.body;
     if (!code || !clientId) {
         return res.status(400).json({ 
             success: false, 
-            error: '缺少必要参数' 
+            error: '缺少必要參數' 
         });
     }
 
     try {
         const output = await compileCpp(code, clientId);
         if (debug) {
-            console.log('编译执行成功:', output);
+            console.log('編譯執行成功:', output);
         }
         res.json({ success: true, output });
     } catch (error) {
-        console.error('编译或执行错误:', error);
+        console.error('編譯或執行錯誤:', error);
         res.status(500).json({ 
             success: false, 
-            error: error.message || '未知错误'
+            error: error.message || '未知錯誤'
         });
     }
 });
 
-// 添加错误处理中间件
+// 添加錯誤處理中間件
 app.use((err, req, res, next) => {
-    console.error('服务器错误:', err);
+    console.error('伺服器錯誤:', err);
     res.status(500).json({ 
         success: false, 
-        error: '服务器内部错误' 
+        error: '伺服器內部錯誤' 
     });
 });
 
-// 处理 404
+// 處理 404
 app.use((req, res) => {
-    console.log('404 请求:', req.method, req.url);
+    console.log('404 請求:', req.method, req.url);
     res.status(404).json({ 
         success: false, 
-        error: '请求的路径不存在' 
+        error: '請求的路徑不存在' 
     });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`服务器运行在端口 ${PORT}`);
-    console.log(`WebSocket 服务器已启动`);
-    console.log(`静态文件目录: ${path.join(__dirname, 'public')}`);
-    console.log(`编译路由: POST /compile`);
+    console.log(`伺服器運行在端口 ${PORT}`);
+    console.log(`WebSocket 伺服器已啟動`);
+    console.log(`靜態文件目錄: ${path.join(__dirname, 'public')}`);
+    console.log(`編譯路由: POST /compile`);
 });
 
-// 在服务器启动时创建临时目录并设置权限
+// 在伺服器啟動時創建臨時目錄並設置權限
 const tmpDir = path.resolve(__dirname, 'tmp');
 fs.mkdir(tmpDir, { recursive: true })
     .then(async () => {
-        // 设置目录权限为 777
+        // 設置目錄權限為 777
         await fs.chmod(tmpDir, 0o777);
-        console.log('临时目录已创建并设置权限:', tmpDir);
+        console.log('臨時目錄已創建並設置權限:', tmpDir);
     })
     .catch(error => {
-        console.error('创建临时目录失败:', error);
+        console.error('創建臨時目錄失敗:', error);
     });
