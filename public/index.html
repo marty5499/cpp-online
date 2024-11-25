@@ -72,8 +72,16 @@
         <button id="runButton">Run</button>
         <div id="output" class="output-container"></div>
         <div id="input-container" class="input-container" style="display: none;">
-            <input type="text" id="programInput" placeholder="请输入...">
-            <button id="sendInput">发送</button>
+            <input type="text" id="programInput" placeholder="請輸入...">
+            <button id="sendInput">發送</button>
+            <button id="endInput" style="
+                padding: 5px 10px;
+                background-color: #ff4444;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                margin-left: 5px;">結束輸入</button>
         </div>
     </div>
 
@@ -126,23 +134,23 @@ int main() {
             ws = new WebSocket(`ws://${window.location.host}`);
             
             ws.onmessage = (event) => {
-                console.log('接收到来自服务器的消息:', event.data);
+                console.log('接收到來自伺服器的訊息:', event.data);
                 const message = JSON.parse(event.data);
                 
                 switch (message.type) {
                     case 'init':
                         clientId = message.clientId;
-                        console.log('获取到 clientId:', clientId);
+                        console.log('獲取到 clientId:', clientId);
                         document.getElementById("runButton").disabled = false;
                         break;
                     case 'output':
-                        console.log('接收到输出:', message.data);
+                        console.log('接收到輸出:', message.data);
                         outputDiv.textContent += message.data;
                         outputDiv.scrollTop = outputDiv.scrollHeight;
                         break;
                     case 'error':
-                        console.log('接收到错误输出:', message.data);
-                        outputDiv.textContent += `错误: ${message.data}`;
+                        console.log('接收到錯誤輸出:', message.data);
+                        outputDiv.textContent += `錯誤: ${message.data}`;
                         outputDiv.scrollTop = outputDiv.scrollHeight;
                         break;
                     case 'processReady':
@@ -153,34 +161,34 @@ int main() {
                     case 'processDone':
                         console.log('接收到processDone消息');
                         inputContainer.style.display = 'none';
-                        outputDiv.textContent += '\n程序执行完毕。\n';
+                        outputDiv.textContent += '\n程序執行完畢。\n';
                         break;
                     default:
-                        console.log('接收到未知类型的消息:', message.type);
+                        console.log('接收到未知類型的消息:', message.type);
                 }
             };
 
             ws.onopen = () => {
-                console.log('WebSocket 连接已建立');
+                console.log('WebSocket 連線已建立');
             };
 
             ws.onclose = () => {
-                console.log('WebSocket 连接已断开，尝试重连...');
+                console.log('WebSocket 連線已斷開，嘗試重連...');
                 document.getElementById("runButton").disabled = true;
                 setTimeout(initWebSocket, 1000);
             };
 
             ws.onerror = (error) => {
-                console.error('WebSocket 错误:', error);
+                console.error('WebSocket 錯誤:', error);
             };
         }
 
         initWebSocket();
 
-        // 修改发送按钮事件处理
+        // 修改發送按鈕事件處理
         sendInputButton.addEventListener('click', () => {
             const input = programInput.value.trim();
-            console.log('发送输入:', input);
+            console.log('發送輸入:', input);
                 ws.send(JSON.stringify({
                     type: 'input',
                     processId: currentProcessId,
@@ -189,13 +197,13 @@ int main() {
                 programInput.value = '';
         });
 
-        // 修改运行按钮初始状态
+        // 修改運行按鈕初始狀態
         document.getElementById("runButton").disabled = true;
 
-        // 修改运行按钮事件处理
+        // 修改運行按鈕事件處理
         document.getElementById("runButton").addEventListener("click", async function() {
             if (!clientId) {
-                outputDiv.textContent = '等待与服务器建立连接...';
+                outputDiv.textContent = '等待與伺服器建立連接...';
                 return;
             }
 
@@ -204,7 +212,7 @@ int main() {
             const code = editor.getValue();
             
             try {
-                console.log('发送编译请求:', { code, clientId });
+                console.log('發送編譯請求:', { code, clientId });
                 const response = await fetch('/compile', {
                     method: 'POST',
                     headers: {
@@ -213,21 +221,34 @@ int main() {
                     body: JSON.stringify({ code, clientId })
                 });
                 const result = await response.json();
-                console.log('收到编译响应:', result);
+                console.log('收到編譯響應:', result);
                 if (!result.success) {
-                    outputDiv.textContent += `错误: ${result.error}\n`;
+                    outputDiv.textContent += `錯誤: ${result.error}\n`;
                 }
             } catch (error) {
-                console.error('请求错误:', error);
-                outputDiv.textContent += `错误: ${error.message}\n`;
+                console.error('請求錯誤:', error);
+                outputDiv.textContent += `錯誤: ${error.message}\n`;
             }
         });
 
-        // 添加回车键支持
+        // 添加回車鍵支持
         programInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 sendInputButton.click();
             }
+        });
+
+        // 獲取結束輸入按鈕元素
+        const endInputButton = document.getElementById('endInput');
+        
+        // 添加結束輸入按鈕的點擊事件處理
+        endInputButton.addEventListener('click', () => {
+            console.log('發送 EOF 信號');
+            ws.send(JSON.stringify({
+                type: 'eof',
+                processId: currentProcessId
+            }));
+            inputContainer.style.display = 'none';
         });
     </script>
 </body>

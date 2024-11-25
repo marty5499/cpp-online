@@ -31,25 +31,24 @@ wss.on('connection', (ws) => {
     ws.on('message', (message) => {
         console.log(`收到來自clientId ${clientId} 的消息: ${message}`);
         const data = JSON.parse(message);
+        
         if (data.type === 'input') {
-            if (data.input === 'D') {
-                const process = processes.get(data.processId);
-                if (process && process.stdin) {
-                    console.log(`關閉clientId ${clientId} 的processId ${data.processId} 的標準輸入`);
-                    process.stdin.end();
-                    ws.send(JSON.stringify({ type: 'processDone' }));
-                    processes.delete(data.processId);
-                } else {
-                    console.log(`未找到對應的processId ${data.processId} 或 process.stdin`);
-                }
+            const process = processes.get(data.processId);
+            if (process && process.stdin) {
+                console.log(`向clientId ${clientId} 的processId ${data.processId} 寫入輸入: ${data.input}`);
+                process.stdin.write(data.input + '\n');
             } else {
-                const process = processes.get(data.processId);
-                if (process && process.stdin) {
-                    console.log(`向clientId ${clientId} 的processId ${data.processId} 寫入輸入: ${data.input}`);
-                    process.stdin.write(data.input + '\n');
-                } else {
-                    console.log(`未找到對應的processId ${data.processId} 或 process.stdin`);
-                }
+                console.log(`未找到對應的processId ${data.processId} 或 process.stdin`);
+            }
+        } else if (data.type === 'eof') {
+            // 處理 EOF 信號
+            const process = processes.get(data.processId);
+            if (process && process.stdin) {
+                console.log(`收到 EOF 信號，關閉 processId ${data.processId} 的標準輸入`);
+                process.stdin.end();
+                processes.delete(data.processId);
+            } else {
+                console.log(`未找到對應的processId ${data.processId} 或 process.stdin`);
             }
         }
     });
