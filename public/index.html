@@ -20,6 +20,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/clike/clike.min.js"></script>
     
+    <script src="websocket-client.js"></script>
     <script>
         // 初始化 CodeMirror
         const editor = CodeMirror.fromTextArea(document.getElementById("editor"), {
@@ -52,106 +53,53 @@ int main() {
     return 0;
 }`);
 
-        let ws;
-        let clientId;
-        let currentProcessId;
+        const client = new CppWebSocketClient();
         const outputDiv = document.getElementById('output');
         let isWaitingForInput = false;
+
+        // 設置回調函數
+        client.setCallbacks({
+            onOutput: (text) => {
+                if (isWaitingForInput) {
+                    outputDiv.lastChild.remove();
+                }
+                outputDiv.appendChild(document.createTextNode(text));
+                if (isWaitingForInput) {
+                    createInputLine();
+                }
+                outputDiv.scrollTop = outputDiv.scrollHeight;
+            },
+            onError: (error) => {
+                outputDiv.appendChild(document.createTextNode(`錯誤: ${error}\n`));
+                outputDiv.scrollTop = outputDiv.scrollHeight;
+            },
+            onProcessReady: () => {
+                isWaitingForInput = true;
+                createInputLine();
+            },
+            onProcessDone: () => {
+                isWaitingForInput = false;
+                if (outputDiv.lastChild.className === 'input-line') {
+                    outputDiv.lastChild.remove();
+                }
+                outputDiv.appendChild(document.createTextNode('\n程序執行完畢。\n'));
+                outputDiv.scrollTop = outputDiv.scrollHeight;
+                client.disconnect();
+            }
+        });
 
         // 修改運行按鈕事件處理
         document.getElementById("runButton").addEventListener("click", async function() {
             outputDiv.textContent = '';
-            // 如果已經有 WebSocket 連接，先關閉它
-            if (ws) {
-                ws.close();
+            try {
+                await client.connect();
+                await client.compile(editor.getValue());
+            } catch (error) {
+                outputDiv.textContent = `錯誤: ${error.message}\n`;
             }
-
-            // 初始化新的 WebSocket 連接
-            ws = new WebSocket(`ws://${window.location.host}`);
-            
-            ws.onmessage = (event) => {
-                console.log('接收到來自伺服器的訊息:', event.data);
-                const message = JSON.parse(event.data);
-                
-                switch (message.type) {
-                    case 'init':
-                        clientId = message.clientId;
-                        console.log('獲取到 clientId:', clientId);
-                        // 收到 init 消息後立即發送編譯請求
-                        sendCompileRequest();
-                        break;
-                    case 'output':
-                        console.log('接收到輸出:', message.data);
-                        if (isWaitingForInput) {
-                            outputDiv.lastChild.remove();
-                        }
-                        outputDiv.appendChild(document.createTextNode(message.data));
-                        if (isWaitingForInput) {
-                            createInputLine();
-                        }
-                        outputDiv.scrollTop = outputDiv.scrollHeight;
-                        break;
-                    case 'processReady':
-                        currentProcessId = message.processId;
-                        console.log('接收到processReady，processId:', currentProcessId);
-                        isWaitingForInput = true;
-                        createInputLine();
-                        break;
-                    case 'processDone':
-                        console.log('接收到processDone消息');
-                        isWaitingForInput = false;
-                        if (outputDiv.lastChild.className === 'input-line') {
-                            outputDiv.lastChild.remove();
-                        }
-                        outputDiv.appendChild(document.createTextNode('\n程序執行完畢。\n'));
-                        outputDiv.scrollTop = outputDiv.scrollHeight;
-                        // 程序結束後關閉 WebSocket 連接
-                        ws.close();
-                        break;
-                    default:
-                        console.log('接收到未知類型的消息:', message.type);
-                }
-            };
-
-            ws.onopen = () => {
-                console.log('WebSocket 連線已建立');
-            };
-
-            ws.onclose = () => {
-                console.log('WebSocket 連線已關閉');
-                isWaitingForInput = false;
-            };
-
-            ws.onerror = (error) => {
-                console.error('WebSocket 錯誤:', error);
-                outputDiv.textContent += `錯誤: WebSocket 連接失敗\n`;
-            };
         });
 
-        // 將編譯請求邏輯抽取為單獨的函數
-        async function sendCompileRequest() {
-            const code = editor.getValue();
-            try {
-                console.log('發送編譯請求:', { code, clientId });
-                const response = await fetch('/compile', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ code, clientId })
-                });
-                const result = await response.json();
-                console.log('收到編譯響應:', result);
-                if (!result.success) {
-                    outputDiv.textContent += `錯誤: ${result.error}\n`;
-                }
-            } catch (error) {
-                console.error('請求錯誤:', error);
-                outputDiv.textContent += `錯誤: ${error.message}\n`;
-            }
-        }
-
-        // 創建輸入行
+        // 修改創建輸入行函數
         function createInputLine() {
             const inputLine = document.createElement('div');
             inputLine.className = 'input-line';
@@ -162,32 +110,18 @@ int main() {
             outputDiv.appendChild(inputLine);
             input.focus();
 
-            // 處理鍵盤事件
             input.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     const inputValue = input.value.trim();
-                    // 移除輸入框
                     inputLine.remove();
-                    // 直接在最後添加輸入的內容
                     outputDiv.appendChild(document.createTextNode(inputValue + '\n'));
-                    // 發送輸入
-                    ws.send(JSON.stringify({
-                        type: 'input',
-                        processId: currentProcessId,
-                        input: inputValue
-                    }));
-                    // 創建新的輸入行
+                    client.sendInput(inputValue);
                     createInputLine();
                 } else if (e.key === 'd' && e.ctrlKey) {
                     e.preventDefault();
-                    // 移除輸入框
                     inputLine.remove();
-                    // 發送 EOF
-                    ws.send(JSON.stringify({
-                        type: 'eof',
-                        processId: currentProcessId
-                    }));
+                    client.sendEOF();
                     isWaitingForInput = false;
                 }
             });
