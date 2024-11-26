@@ -86,76 +86,82 @@ async function compileCpp(code, clientId) {
             console.log('源文件:', sourceFile);
             console.log('源代碼:', code);
             
-            // 檢查文件是否存在
             const files = await fs.readdir(workDir);
             console.log('目錄內容:', files);
         }
 
         return new Promise((resolve, reject) => {
-            // 修改 Docker 命令，使用絕對路徑並添加調試信息
-            const dockerCmd = debug 
-                ? `docker run --rm -i \
-                    -v "${workDir}:/workspace" \
-                    -w /workspace \
-                    -u root \
-                    cpp-runner:latest \
-                    bash -c "ls -la && pwd && g++ main.cpp -o program && ./program"`
-                : `docker run --rm -i \
-                    -v "${workDir}:/workspace" \
-                    -w /workspace \
-                    -u root \
-                    cpp-runner:latest \
-                    bash -c "g++ main.cpp -o program && ./program"`;
-            
-            if (debug) {
-                console.log('Docker命令:', dockerCmd);
-            }
-
-            const process = spawn('/bin/bash', ['-c', dockerCmd], {
+            // 直接使用本地 g++ 編譯和執行
+            const process = spawn('g++', ['main.cpp', '-o', 'program'], {
                 cwd: workDir
             });
-            console.log(`已啟動Docker進程，processId: ${id}`);
 
-            let output = '';
-            let errorOutput = '';
-
-            process.stdin.on('end', () => {
-                console.log(`processId ${id} 標準輸入已結束`);
-            });
-
-            process.stdout.on('data', (data) => {
-                const text = data.toString();
-                output += text;
-                ws.send(JSON.stringify({ type: 'output', data: text }));
-                console.log(`processId ${id} 輸出: ${text}`);
-            });
+            let compileError = '';
 
             process.stderr.on('data', (data) => {
-                const text = data.toString();
-                errorOutput += text;
-                ws.send(JSON.stringify({ type: 'error', data: text }));
-                console.error(`processId ${id} 錯誤輸出: ${text}`);
+                compileError += data.toString();
             });
 
             process.on('error', (error) => {
-                console.error(`processId ${id} 進程錯誤:`, error);
+                console.error(`編譯錯誤: ${error}`);
                 reject(error);
             });
 
             process.on('close', (code) => {
-                console.log(`processId ${id} 進程已關閉，退出碼: ${code}`);
-                console.log(`processId ${id} 最終輸出: ${output}`);
-                if (errorOutput) {
-                    console.error(`processId ${id} 最終錯誤輸出: ${errorOutput}`);
+                if (code !== 0) {
+                    console.error(`編譯失敗，錯誤碼: ${code}`);
+                    ws.send(JSON.stringify({ type: 'error', data: compileError }));
+                    reject(new Error(compileError));
+                    return;
                 }
-                ws.send(JSON.stringify({ type: 'processDone' }));
-                processes.delete(id);
-            });
 
-            // 儲存process到processes映射
-            processes.set(id, process);
-            ws.send(JSON.stringify({ type: 'processReady', processId: id }));
-            console.log(`processReady消息已發送，processId: ${id}`);
+                // 編譯成功後執行程序
+                const runProcess = spawn('./program', [], {
+                    cwd: workDir
+                });
+                console.log(`已啟動程序，processId: ${id}`);
+
+                let output = '';
+                let errorOutput = '';
+
+                runProcess.stdin.on('end', () => {
+                    console.log(`processId ${id} 標準輸入已結束`);
+                });
+
+                runProcess.stdout.on('data', (data) => {
+                    const text = data.toString();
+                    output += text;
+                    ws.send(JSON.stringify({ type: 'output', data: text }));
+                    console.log(`processId ${id} 輸出: ${text}`);
+                });
+
+                runProcess.stderr.on('data', (data) => {
+                    const text = data.toString();
+                    errorOutput += text;
+                    ws.send(JSON.stringify({ type: 'error', data: text }));
+                    console.error(`processId ${id} 錯誤輸出: ${text}`);
+                });
+
+                runProcess.on('error', (error) => {
+                    console.error(`processId ${id} 進程錯誤:`, error);
+                    reject(error);
+                });
+
+                runProcess.on('close', (code) => {
+                    console.log(`processId ${id} 進程已關閉，退出碼: ${code}`);
+                    console.log(`processId ${id} 最終輸出: ${output}`);
+                    if (errorOutput) {
+                        console.error(`processId ${id} 最終錯誤輸出: ${errorOutput}`);
+                    }
+                    ws.send(JSON.stringify({ type: 'processDone' }));
+                    processes.delete(id);
+                });
+
+                // 儲存process到processes映射
+                processes.set(id, runProcess);
+                ws.send(JSON.stringify({ type: 'processReady', processId: id }));
+                console.log(`processReady消息已發送，processId: ${id}`);
+            });
         });
     } catch (error) {
         console.error('編譯過程錯誤:', error);

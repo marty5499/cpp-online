@@ -1,20 +1,25 @@
-FROM gcc:12
+FROM node:18-buster
 
-# 創建工作目錄
-WORKDIR /workspace
-
-# 添加鏡像源並安裝必要工具
-RUN echo "deb http://deb.debian.org/debian bookworm main" > /etc/apt/sources.list && \
-    echo "deb http://deb.debian.org/debian-security bookworm-security main" >> /etc/apt/sources.list && \
-    echo "deb http://deb.debian.org/debian bookworm-updates main" >> /etc/apt/sources.list && \
-    apt-get update --allow-insecure-repositories && \
-    apt-get install -y --allow-unauthenticated --no-install-recommends g++ && \
+# 安裝 C++ 編譯工具和 GPG
+RUN apt-get update --allow-insecure-repositories && \
+    apt-get install -y --allow-unauthenticated gnupg dirmngr g++ && \
     rm -rf /var/lib/apt/lists/*
 
-# 設置工作目錄權限
-RUN chmod 777 /workspace
+# 創建工作目錄
+WORKDIR /app
 
-# 保持 root 用戶以便使用動態 UID
-USER root
+# 複製依賴描述檔並安裝依賴
+COPY package*.json ./
+RUN npm install
 
-CMD ["bash"]
+# 複製代碼
+COPY . .
+
+# 設置權限
+RUN mkdir -p /app/tmp && chmod 777 /app/tmp && chmod 777 /app
+
+# 暴露端口
+EXPOSE 3000
+
+# 啟動應用
+CMD ["node", "server.js"]
