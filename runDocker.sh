@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Registry URL 設定
-registry_url="nest.webduino.tw/cpp-online:latest"
+#registry_url="nest.webduino.tw/cpp-online:latest"
+registry_url="cpp.egame.kh.edu.tw/cpp-online:latest"
 
 while true; do
     # 顯示選單
