@@ -23,10 +23,18 @@ const clients = new Map();
 // 儲存子進程
 const processes = new Map();
 
+const debug = true;  // 開啟調試模式用於排查問題
+
 wss.on('connection', (ws) => {
     const clientId = uuidv4();
     clients.set(clientId, ws);
     console.log(`新的WebSocket連接已建立，clientId: ${clientId}`);
+
+    // 添加心跳檢測
+    ws.isAlive = true;
+    ws.on('pong', () => {
+        ws.isAlive = true;
+    });
 
     ws.on('message', (message) => {
         console.log(`收到來自clientId ${clientId} 的消息: ${message}`);
@@ -61,6 +69,27 @@ wss.on('connection', (ws) => {
     // 發送clientId給客戶端
     ws.send(JSON.stringify({ type: 'init', clientId }));
     console.log(`已發送init消息給clientId: ${clientId}`);
+});
+
+// 添加 WebSocket 服務器的錯誤處理
+wss.on('error', (error) => {
+    console.error('WebSocket 服務器錯誤:', error);
+});
+
+// 添加心跳檢測間隔
+const interval = setInterval(() => {
+    wss.clients.forEach((ws) => {
+        if (ws.isAlive === false) {
+            console.log('關閉無響應的 WebSocket 連接');
+            return ws.terminate();
+        }
+        ws.isAlive = false;
+        ws.ping(() => {});
+    });
+}, 30000);
+
+wss.on('close', () => {
+    clearInterval(interval);
 });
 
 // 修改編譯和執行C++代碼的函數
@@ -100,67 +129,61 @@ async function compileCpp(code, clientId) {
 
             process.stderr.on('data', (data) => {
                 compileError += data.toString();
+                console.error('編譯錯誤輸出:', data.toString());
             });
 
             process.on('error', (error) => {
-                console.error(`編譯錯誤: ${error}`);
+                console.error('編譯進程錯誤:', error);
                 reject(error);
             });
 
             process.on('close', (code) => {
                 if (code !== 0) {
-                    console.error(`編譯失敗，錯誤碼: ${code}`);
+                    console.error('編譯失敗，退出碼:', code);
+                    console.error('編譯錯誤信息:', compileError);
                     ws.send(JSON.stringify({ type: 'error', data: compileError }));
                     reject(new Error(compileError));
                     return;
                 }
 
+                console.log('編譯成功，開始執行程序');
+
                 // 編譯成功後執行程序
                 const runProcess = spawn('./program', [], {
                     cwd: workDir
                 });
-                console.log(`已啟動程序，processId: ${id}`);
 
-                let output = '';
-                let errorOutput = '';
-
-                runProcess.stdin.on('end', () => {
-                    console.log(`processId ${id} 標準輸入已結束`);
-                });
+                // 保存進程引用
+                processes.set(id, runProcess);
+                
+                console.log(`進程已啟動，processId: ${id}`);
+                ws.send(JSON.stringify({ type: 'processReady', processId: id }));
 
                 runProcess.stdout.on('data', (data) => {
                     const text = data.toString();
-                    output += text;
                     ws.send(JSON.stringify({ type: 'output', data: text }));
-                    console.log(`processId ${id} 輸出: ${text}`);
+                    console.log(`進程輸出: ${text}`);
                 });
 
                 runProcess.stderr.on('data', (data) => {
                     const text = data.toString();
-                    errorOutput += text;
                     ws.send(JSON.stringify({ type: 'error', data: text }));
-                    console.error(`processId ${id} 錯誤輸出: ${text}`);
+                    console.error(`進程錯誤輸出: ${text}`);
                 });
 
                 runProcess.on('error', (error) => {
-                    console.error(`processId ${id} 進程錯誤:`, error);
+                    console.error('執行錯誤:', error);
+                    ws.send(JSON.stringify({ type: 'error', data: error.message }));
+                    processes.delete(id);
                     reject(error);
                 });
 
                 runProcess.on('close', (code) => {
-                    console.log(`processId ${id} 進程已關閉，退出碼: ${code}`);
-                    console.log(`processId ${id} 最終輸出: ${output}`);
-                    if (errorOutput) {
-                        console.error(`processId ${id} 最終錯誤輸出: ${errorOutput}`);
-                    }
+                    console.log(`進程結束，退出碼: ${code}`);
                     ws.send(JSON.stringify({ type: 'processDone' }));
                     processes.delete(id);
+                    resolve();
                 });
-
-                // 儲存process到processes映射
-                processes.set(id, runProcess);
-                ws.send(JSON.stringify({ type: 'processReady', processId: id }));
-                console.log(`processReady消息已發送，processId: ${id}`);
             });
         });
     } catch (error) {
@@ -181,8 +204,6 @@ async function compileCpp(code, clientId) {
         }, 1000);
     }
 }
-
-const debug = false;  // 開啟調試模式
 
 app.post('/compile', async (req, res) => {
     if (debug) {

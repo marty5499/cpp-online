@@ -2,120 +2,145 @@ class CppWebSocketClient {
     constructor() {
         this.ws = null;
         this.clientId = null;
-        this.currentProcessId = null;
         this.callbacks = {
-            onOutput: null,
-            onError: null,
-            onProcessReady: null,
-            onProcessDone: null
+            onOutput: () => {},
+            onError: () => {},
+            onProcessReady: () => {},
+            onProcessDone: () => {}
         };
     }
 
-    // 設置回調函數
-    setCallbacks({
-        onOutput = (text) => {},
-        onError = (error) => {},
-        onProcessReady = () => {},
-        onProcessDone = () => {}
-    } = {}) {
-        this.callbacks.onOutput = onOutput;
-        this.callbacks.onError = onError;
-        this.callbacks.onProcessReady = onProcessReady;
-        this.callbacks.onProcessDone = onProcessDone;
+    setCallbacks(callbacks) {
+        this.callbacks = { ...this.callbacks, ...callbacks };
     }
 
-    // 連接到伺服器
     async connect() {
         return new Promise((resolve, reject) => {
-            if (this.ws) {
-                this.ws.close();
+            try {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const host = window.location.host || 'localhost:3000';
+                const wsUrl = `${protocol}//${host}`;
+                
+                console.log('嘗試連接到 WebSocket 服務器:', wsUrl);
+                
+                this.ws = new WebSocket(wsUrl);
+
+                // 等待接收 clientId
+                const initTimeout = setTimeout(() => {
+                    if (!this.clientId) {
+                        console.error('等待接收 clientId 超時');
+                        this.ws.close();
+                        reject(new Error('等待接收 clientId 超時'));
+                    }
+                }, 5000);
+
+                this.ws.onopen = () => {
+                    console.log('WebSocket 連接已建立，等待接收 clientId...');
+                };
+
+                this.ws.onerror = (error) => {
+                    clearTimeout(initTimeout);
+                    console.error('WebSocket 錯誤:', error);
+                    reject(error);
+                };
+
+                this.ws.onclose = () => {
+                    clearTimeout(initTimeout);
+                    console.log('WebSocket 連接已關閉');
+                    this.ws = null;
+                    this.clientId = null;
+                };
+
+                this.ws.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        console.log('收到消息:', message);
+                        
+                        switch (message.type) {
+                            case 'init':
+                                this.clientId = message.clientId;
+                                console.log('收到 clientId:', this.clientId);
+                                clearTimeout(initTimeout);
+                                resolve(); // 只有在收到 clientId 後才解析 Promise
+                                break;
+                            case 'output':
+                                this.callbacks.onOutput(message.data);
+                                break;
+                            case 'error':
+                                this.callbacks.onError(message.data);
+                                break;
+                            case 'processReady':
+                                this.processId = message.processId;
+                                this.callbacks.onProcessReady();
+                                break;
+                            case 'processDone':
+                                this.callbacks.onProcessDone();
+                                break;
+                        }
+                    } catch (error) {
+                        console.error('處理消息時發生錯誤:', error);
+                        this.callbacks.onError('處理消息時發生錯誤: ' + error.message);
+                    }
+                };
+            } catch (error) {
+                console.error('建立 WebSocket 連接時發生錯誤:', error);
+                reject(error);
+            }
+        });
+    }
+
+    async compile(code) {
+        try {
+            if (!this.clientId) {
+                throw new Error('WebSocket 未連接或未收到 clientId');
             }
 
-            this.ws = new WebSocket(`ws://${window.location.host}`);
+            console.log('發送編譯請求，clientId:', this.clientId);
             
-            this.ws.onmessage = (event) => {
-                const message = JSON.parse(event.data);
-                
-                switch (message.type) {
-                    case 'init':
-                        this.clientId = message.clientId;
-                        resolve();
-                        break;
-                    case 'output':
-                        this.callbacks.onOutput(message.data);
-                        break;
-                    case 'error':
-                        this.callbacks.onError(message.data);
-                        break;
-                    case 'processReady':
-                        this.currentProcessId = message.processId;
-                        this.callbacks.onProcessReady();
-                        break;
-                    case 'processDone':
-                        this.callbacks.onProcessDone();
-                        this.currentProcessId = null;
-                        break;
-                }
-            };
+            const response = await fetch('/compile', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    code,
+                    clientId: this.clientId
+                })
+            });
 
-            this.ws.onerror = (error) => {
-                reject(error);
-            };
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || '編譯失敗');
+            }
 
-            this.ws.onclose = () => {
-                this.clientId = null;
-                this.currentProcessId = null;
-            };
-        });
+            const result = await response.json();
+            console.log('編譯請求響應:', result);
+            return result;
+        } catch (error) {
+            console.error('編譯請求失敗:', error);
+            throw error;
+        }
     }
 
-    // 編譯並運行程式碼
-    async compile(code) {
-        if (!this.clientId) {
-            throw new Error('WebSocket 未連接');
-        }
-
-        const response = await fetch('/compile', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ code, clientId: this.clientId })
-        });
-
-        const result = await response.json();
-        if (!result.success) {
-            throw new Error(result.error);
-        }
-        return result;
-    }
-
-    // 發送輸入到程序
     sendInput(input) {
-        if (!this.currentProcessId) {
-            throw new Error('沒有正在運行的程序');
+        if (this.ws && this.processId) {
+            this.ws.send(JSON.stringify({
+                type: 'input',
+                processId: this.processId,
+                input: input
+            }));
         }
-
-        this.ws.send(JSON.stringify({
-            type: 'input',
-            processId: this.currentProcessId,
-            input: input
-        }));
     }
 
-    // 發送 EOF 信號
     sendEOF() {
-        if (!this.currentProcessId) {
-            throw new Error('沒有正在運行的程序');
+        if (this.ws && this.processId) {
+            this.ws.send(JSON.stringify({
+                type: 'eof',
+                processId: this.processId
+            }));
         }
-
-        this.ws.send(JSON.stringify({
-            type: 'eof',
-            processId: this.currentProcessId
-        }));
     }
 
-    // 關閉連接
     disconnect() {
         if (this.ws) {
             this.ws.close();
