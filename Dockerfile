@@ -15,8 +15,15 @@ RUN npm install
 # 複製代碼
 COPY . .
 
-# 設置權限
-RUN mkdir -p /app/tmp && chmod 777 /app/tmp && chmod 777 /app
+# 創建臨時目錄並設置權限
+RUN mkdir -p /app/tmp && \
+    mkdir -p /app/tmp/output && \
+    chmod -R 777 /app/tmp && \
+    chmod -R 777 /app && \
+    chown -R node:node /app
+
+# 設置環境變量
+ENV COMPILE_OUTPUT_DIR=/app/tmp/output
 
 # 暴露端口
 EXPOSE 3000

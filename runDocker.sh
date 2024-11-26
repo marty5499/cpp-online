@@ -6,7 +6,7 @@ registry_url="nest.webduino.tw/cpp-online:latest"
 while true; do
     # 顯示選單
     echo "請選擇操作："
-    echo "1. 建構映像檔"
+    echo "1. 建構映像檔 (AMD64)"
     echo "2. 推送到 ($registry_url)"
     echo "3. 執行容器"
     echo "4. 退出"
@@ -20,14 +20,14 @@ while true; do
             # 刪除舊映像檔
             docker rmi cpp-online:latest -f
 
-            # 重新建構映像檔
-            docker build -t cpp-online .
+            # 重新建構映像檔，指定 AMD64 平台
+            DOCKER_BUILDKIT=1 docker build --platform linux/amd64 -t cpp-online .
 
             # 確保臨時目錄存在並有正確權限
-            mkdir -p tmp
-            chmod 777 tmp
+            mkdir -p tmp/output
+            chmod -R 777 tmp
             
-            echo "映像檔建構完成"
+            echo "AMD64 架構映像檔建構完成"
             ;;
         2)
             docker tag cpp-online:latest $registry_url
@@ -43,8 +43,10 @@ while true; do
             docker run \
               --name cpp-online \
               -p 3000:3000 \
-              -v $(pwd):/app \
+              -v $(pwd):/app:rw \
               --restart unless-stopped \
+              --user root \
+              --cap-add=SYS_ADMIN \
               cpp-online:latest
 
             echo "容器已啟動，可以通過 http://localhost:3000 訪問應用"

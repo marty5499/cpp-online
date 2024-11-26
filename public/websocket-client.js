@@ -19,7 +19,8 @@ class CppWebSocketClient {
             try {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const host = window.location.host || 'localhost:3000';
-                const wsUrl = `${protocol}//${host}`;
+                const path = window.location.pathname.replace(/\/[^/]*$/, '');
+                const wsUrl = `${protocol}//${host}${path}`;
                 
                 console.log('嘗試連接到 WebSocket 服務器:', wsUrl);
                 
@@ -147,4 +148,4 @@ class CppWebSocketClient {
             this.ws = null;
         }
     }
-} 
+}

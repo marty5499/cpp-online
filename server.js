@@ -97,59 +97,65 @@ async function compileCpp(code, clientId) {
     const id = uuidv4();
     const workDir = path.resolve(__dirname, 'tmp', id);
     const sourceFile = path.join(workDir, 'main.cpp');
+    const outputFile = path.join(workDir, 'program');
     const ws = clients.get(clientId);
 
     try {
-        // 創建工作目錄並設置權限
+        // 創建工作目錄
         await fs.mkdir(workDir, { recursive: true });
         await fs.chmod(workDir, 0o777);
-        console.log(`已創建工作目錄: ${workDir} 並設置權限為777`);
-
-        // 寫入源代碼文件並設置權限
+        
+        // 寫入源代碼文件
         await fs.writeFile(sourceFile, code, 'utf8');
-        await fs.chmod(sourceFile, 0o666);
-        console.log(`已寫入源代碼到: ${sourceFile} 並設置權限為666`);
+        await fs.chmod(sourceFile, 0o777);  // 修改權限為 777
 
         if (debug) {
             console.log('工作目錄:', workDir);
             console.log('源文件:', sourceFile);
+            console.log('輸出文件:', outputFile);
             console.log('源代碼:', code);
-            
-            const files = await fs.readdir(workDir);
-            console.log('目錄內容:', files);
         }
 
         return new Promise((resolve, reject) => {
-            // 直接使用本地 g++ 編譯和執行
-            const process = spawn('g++', ['main.cpp', '-o', 'program'], {
-                cwd: workDir
-            });
+            // 編譯命令
+            const compileCmd = spawn('bash', [
+                '-c',
+                `cd "${workDir}" && g++ main.cpp -o program -std=c++11`
+            ]);
 
             let compileError = '';
 
-            process.stderr.on('data', (data) => {
+            compileCmd.stderr.on('data', (data) => {
                 compileError += data.toString();
                 console.error('編譯錯誤輸出:', data.toString());
             });
 
-            process.on('error', (error) => {
+            compileCmd.on('error', (error) => {
                 console.error('編譯進程錯誤:', error);
                 reject(error);
             });
 
-            process.on('close', (code) => {
+            compileCmd.on('close', async (code) => {
                 if (code !== 0) {
                     console.error('編譯失敗，退出碼:', code);
-                    console.error('編譯錯誤信息:', compileError);
                     ws.send(JSON.stringify({ type: 'error', data: compileError }));
                     reject(new Error(compileError));
                     return;
                 }
 
+                // 確保輸出文件有執行權限
+                try {
+                    await fs.chmod(outputFile, 0o777);
+                } catch (error) {
+                    console.error('設置執行權限失敗:', error);
+                    reject(error);
+                    return;
+                }
+
                 console.log('編譯成功，開始執行程序');
 
-                // 編譯成功後執行程序
-                const runProcess = spawn('./program', [], {
+                // 執行程序
+                const runProcess = spawn(outputFile, [], {
                     cwd: workDir
                 });
 
@@ -189,19 +195,6 @@ async function compileCpp(code, clientId) {
     } catch (error) {
         console.error('編譯過程錯誤:', error);
         throw error;
-    } finally {
-        // 延遲清理臨時文件
-        setTimeout(async () => {
-            try {
-                await fs.rm(workDir, { recursive: true, force: true });
-                if (debug) {
-                    console.log('清理工作目錄:', workDir);
-                }
-                console.log(`已清理工作目錄: ${workDir}`);
-            } catch (error) {
-                console.error('清理臨時文件失敗:', error);
-            }
-        }, 1000);
     }
 }
 
